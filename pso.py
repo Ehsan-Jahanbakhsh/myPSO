@@ -8,8 +8,8 @@ def calc_score(x, score_func):
 def check_constraint(constraint_ueq, x):
     for constraint_func in constraint_ueq:
         if constraint_func(x) > 0:
-            return False
-    return True
+            return 0
+    return 1
 
 
 def update_velocity(initial_velocity,
@@ -32,9 +32,13 @@ def update_x(x, velocity):
     return x + velocity
 
 
-def update_local_best(x, x_score, old_l_best, old_l_best_score):
+def update_local_best(x, x_score, old_l_best,
+                      old_l_best_score, constraints=[]):
     tmp1 = np.stack((old_l_best_score, x_score))
     mask = np.argmin(tmp1, axis=0)
+    for idx, xs in enumerate(x):
+        if mask[idx] == 1:
+            mask[idx] = check_constraint(constraints, xs)
     m_range = list(range(len(mask)))
     tmp2 = np.stack((old_l_best, x))
     l_best_score = tmp1[mask, m_range]
@@ -64,10 +68,10 @@ def get_nghbr_best(l_best, l_best_score, nghbrh_matrix):
 
 def epoch(x, v, l_best, l_best_score,
           adj_matrix, c0, c1, c2, c3,
-          opt_func, ranges):
+          opt_func, ranges, constraints):
     x_score = calc_score(x, opt_func)
     new_l_best, new_l_best_score = update_local_best(x, x_score, l_best,
-                                                     l_best_score)
+                                                     l_best_score, constraints)
 
     new_g_best, _ = get_global_best(new_l_best,
                                     new_l_best_score)
@@ -91,21 +95,27 @@ def run(opt_func, adj_matrix,
         n=10, dim=2,
         epochs=10, c0=1,
         c1=0.5, c2=0.5, c3=0.5,
-        ub=[], lb=[]):
+        ub=[], lb=[], constraints=[]):
     lb, ub = np.array(lb), np.array(ub)
     x = np.random.uniform(low=lb, high=ub, size=(n, dim))
     assert np.all(ub > lb)
     v_range = (ub - lb)/2
     v = np.random.uniform(low=-v_range, high=v_range, size=(n, dim))
 
-    l_best = x.copy()
-    l_best_score = calc_score(x, opt_func)
+    l_best = np.zeros(x.shape)
+    l_best_score = np.inf * np.ones(x.shape[0])
 
     ranges = (lb, ub)
+
+    g_best_log = []
 
     for i in range(epochs):
         x, v, l_best, l_best_score = epoch(x, v, l_best,
                                            l_best_score, adj_matrix,
-                                           c0, c1, c2, c3, opt_func, ranges)
-        print(i)
-    return l_best, l_best_score, *get_global_best(l_best, l_best_score)
+                                           c0, c1, c2, c3, opt_func,
+                                           ranges, constraints)
+        g_best_log.append(get_global_best(l_best, l_best_score)[1])
+        # if (i % 500) == 0:
+        # print(i)
+    return (l_best, l_best_score,
+            *get_global_best(l_best, l_best_score), g_best_log)
